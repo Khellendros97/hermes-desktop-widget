@@ -1,0 +1,13 @@
+/* Hermes Desktop Panel - Global Dark Theme */
+
+QWidget {
+    font-family: "Microsoft YaHei", "Segoe UI", "PingFang SC", sans-serif;
+}
+
+QToolTip {
+    background: #18181b;
+    color: #e4e4e7;
+    border: 1px solid #3f3f46;
+    padding: 6px;
+    border-radius: 6px;
+}
