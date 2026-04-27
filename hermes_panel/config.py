@@ -11,6 +11,7 @@ DEFAULTS = {
     "server/verify_cert": True,
     "panel/x": -1,
     "panel/hide_delay_ms": 5000,
+    "panel/multiline_notify": False,
     "portal/url": "",
     "app/autostart": False,
 }

@@ -223,9 +223,14 @@ class MessageBubble(QFrame):
 class NotifyStrip(QWidget):
     """Top notification bar used in HIDDEN and NOTIFY states."""
 
+    NOTIFY_PADDING_TOP = 6
+    NOTIFY_PADDING_BOTTOM = 6
+    NOTIFY_MAX_HEIGHT = 200
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._raw_text = ""
+        self._multiline = False
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 6, 12, 6)
@@ -261,8 +266,21 @@ class NotifyStrip(QWidget):
         self._portal_btn.clicked.connect(self._open_portal)
         layout.addWidget(self._portal_btn)
 
+    def set_multiline_mode(self, enabled: bool):
+        """Enable or disable multi-line notification mode."""
+        self._multiline = enabled
+        self._text.setWordWrap(enabled)
+        if enabled:
+            self._text.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        else:
+            self._text.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self._update_text()
+
     def set_notification(self, text: str):
-        self._raw_text = _normalize_notification_text(text)
+        if self._multiline:
+            self._raw_text = text.strip()
+        else:
+            self._raw_text = _normalize_notification_text(text)
         self._update_text()
 
     def resizeEvent(self, event):
@@ -270,10 +288,13 @@ class NotifyStrip(QWidget):
         self._update_text()
 
     def _update_text(self):
-        available_width = max(0, self._text.width())
         if not self._raw_text:
             self._text.clear()
             return
+        if self._multiline:
+            self._text.setText(self._raw_text)
+            return
+        available_width = max(0, self._text.width())
         if available_width <= 0:
             self._text.setText(self._raw_text)
             return
@@ -303,7 +324,9 @@ class DynamicIsland(QWidget):
     W_HIDDEN, H_HIDDEN = 80, 8
     W_NOTIFY_MIN = 200
     W_NOTIFY_MAX = 500
+    W_NOTIFY_MULTILINE = 420
     H_NOTIFY = 48
+    NOTIFY_MAX_HEIGHT = 200
     W_CHAT, H_CHAT = 420, 520
     PADDING = 16
     RADIUS = 20
@@ -343,6 +366,7 @@ class DynamicIsland(QWidget):
 
         self._init_ui()
         self._init_position()
+        self._refresh_multiline_mode()
         self._apply_state(animate=False)
         self.refresh_portal_visibility()
 
@@ -524,9 +548,16 @@ class DynamicIsland(QWidget):
         x = saved_x if saved_x >= 0 else (screen.width() - self.W_HIDDEN) // 2
         self.move(x, 0)
 
+    def _is_multiline(self) -> bool:
+        return get("panel/multiline_notify").lower() in ("true", "1", "yes")
+
+    def _refresh_multiline_mode(self):
+        self._notify.set_multiline_mode(self._is_multiline())
+
     # ── State ──
 
     def _apply_state(self, animate: bool = True):
+        self._refresh_multiline_mode()
         geo = self.geometry()
         hide_delay = int(get("panel/hide_delay_ms") or 5000)
         self._hide_timer.setInterval(hide_delay)
@@ -546,12 +577,14 @@ class DynamicIsland(QWidget):
             self._bg_color = BG_COLOR_HIDDEN
         elif self._state == "NOTIFY":
             w = self._calc_notify_width()
+            h = self._calc_notify_height(w)
             target = QRect(
                 max(0, min(int(center_x - w / 2), screen_w - w)),
-                geo.y(), w, self.H_NOTIFY,
+                geo.y(), w, h,
             )
             self._hidden_bar.setVisible(False)
             self._notify.setVisible(True)
+            self._notify.setFixedHeight(h)
             self._chat_area.setVisible(False)
             self._hide_timer.start()
         else:
@@ -629,7 +662,29 @@ class DynamicIsland(QWidget):
         text_w = fm.horizontalAdvance(text)
         portal_w = 32 if self._notify._portal_btn.isVisible() else 0
         total = self.PADDING + 18 + 8 + text_w + portal_w + self.PADDING + 10
+        if self._is_multiline():
+            # In multiline mode, prefer wider width to show more text
+            return max(self.W_NOTIFY_MIN, min(total, self.W_NOTIFY_MULTILINE))
         return max(self.W_NOTIFY_MIN, min(total, self.W_NOTIFY_MAX))
+
+    def _calc_notify_height(self, width: int) -> int:
+        if not self._is_multiline():
+            return self.H_NOTIFY
+        text = self._notify._raw_text
+        if not text:
+            return self.H_NOTIFY
+        fm = self._notify._text.fontMetrics()
+        # Available content width = window width minus layout margins and other widgets
+        portal_w = 24 + 8 if self._notify._portal_btn.isVisible() else 0
+        content_w = max(1, width - 12 - 18 - 8 - portal_w - 12)
+        rect = fm.boundingRect(
+            QRect(0, 0, content_w, 0),
+            Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap,
+            text,
+        )
+        # Height = text height + top padding + bottom padding
+        h = rect.height() + 6 + 6 + 4  # +4 for some breathing room
+        return max(self.H_NOTIFY, min(h, self.NOTIFY_MAX_HEIGHT))
 
     def _flush_pending(self):
         if not self._pending_bubbles:
