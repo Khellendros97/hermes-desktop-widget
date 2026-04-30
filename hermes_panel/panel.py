@@ -796,6 +796,21 @@ class DynamicIsland(QWidget):
             # Update notification with accumulated text (first 100 chars)
             accumulated = "".join(self._stream_buffer)
             preview = accumulated[:100] + ("..." if len(accumulated) > 100 else "")
+
+            # Auto-detect visual style from accumulated content
+            style = ""
+            if "⚠️" in accumulated:
+                style = "alert"
+                self._rgb_timer.stop()
+            elif "✅" in accumulated:
+                style = "rgb-breathing"
+                self._rgb_hue = 0.0
+                self._rgb_timer.start()
+            else:
+                self._rgb_timer.stop()
+            self._notify_style = style
+            self._notify.set_style(style)
+
             self._notify.set_notification(preview)
             if self._state == "NOTIFY":
                 self._apply_state()  # refresh width
