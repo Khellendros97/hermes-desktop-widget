@@ -31,7 +31,7 @@ class HermesClient(QObject):
     auth_ok = pyqtSignal()
     delta_received = pyqtSignal(str, int)
     done_received = pyqtSignal(str)
-    notification_received = pyqtSignal(str, str)
+    notification_received = pyqtSignal(str, str, str)  # text, level, style
     error_occurred = pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -117,7 +117,7 @@ class HermesClient(QObject):
             _log.info("_on_message: done with session_id=%r", msg.session_id)
             self.done_received.emit(msg.session_id)
         elif isinstance(msg, IncomingNotification):
-            self.notification_received.emit(msg.text, msg.level)
+            self.notification_received.emit(msg.text, msg.level, msg.style)
         elif isinstance(msg, IncomingError):
             self.error_occurred.emit(msg.text)
 

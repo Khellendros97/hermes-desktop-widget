@@ -151,8 +151,8 @@ class Application:
         self._panel.end_stream()
         self._save_last_assistant()
 
-    def _on_notification(self, text: str, level: str):
-        self._panel.show_notification(text)
+    def _on_notification(self, text: str, level: str, style: str = ""):
+        self._panel.show_notification(text, style)
 
     def _show_settings(self):
         dialog = SettingsDialog()

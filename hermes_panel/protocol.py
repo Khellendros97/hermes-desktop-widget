@@ -45,6 +45,7 @@ class IncomingNotification:
     """Server -> Client: system notification (cron results, etc.)."""
     text: str
     level: str = "info"
+    style: str = ""
 
 
 @dataclass
@@ -85,7 +86,7 @@ def deserialize(raw: str):
     elif cls is IncomingDone:
         return cls(session_id=data.get("session_id", ""))
     elif cls is IncomingNotification:
-        return cls(text=data.get("text", ""), level=data.get("level", "info"))
+        return cls(text=data.get("text", ""), level=data.get("level", "info"), style=data.get("style", ""))
     elif cls is IncomingError:
         return cls(text=data.get("text", ""))
     elif cls is IncomingAuthOk:
