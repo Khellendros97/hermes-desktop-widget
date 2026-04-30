@@ -749,6 +749,12 @@ class DynamicIsland(QWidget):
     # ── Public API ──
 
     def show_notification(self, text: str, style: str = ""):
+        # Auto-detect visual style from text content if server didn't provide one
+        if not style:
+            if "⚠️" in text:
+                style = "alert"
+            elif "✅" in text:
+                style = "rgb-breathing"
         self._notify_style = style
         self._notify.set_style(style)
         self._notify.set_notification(text)
