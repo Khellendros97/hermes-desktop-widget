@@ -358,7 +358,7 @@ class DynamicIsland(QWidget):
         self._stream_active = False
         self._anim: QPropertyAnimation | None = None
         self._notify_style = ""       # "alert" | "rgb-breathing" | ""
-        self._rgb_hue = 0.0           # RGB breathing hue animation counter
+        self._rgb_hue = 120.0         # RGB breathing hue (start from green)
 
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
@@ -759,7 +759,7 @@ class DynamicIsland(QWidget):
         self._notify.set_style(style)
         self._notify.set_notification(text)
         if style == "rgb-breathing":
-            self._rgb_hue = 0.0
+            self._rgb_hue = 120.0  # start from green
             self._rgb_timer.start()
         elif style != "rgb-breathing" and self._rgb_timer.isActive():
             self._rgb_timer.stop()
@@ -804,7 +804,7 @@ class DynamicIsland(QWidget):
                 self._rgb_timer.stop()
             elif "✅" in accumulated:
                 style = "rgb-breathing"
-                self._rgb_hue = 0.0
+                self._rgb_hue = 120.0  # start from green
                 self._rgb_timer.start()
             else:
                 self._rgb_timer.stop()
@@ -935,6 +935,7 @@ class DynamicIsland(QWidget):
             painter.setBrush(QBrush(BG_COLOR))
             # Determine border based on notification style
             if self._state == "NOTIFY" and self._notify_style == "alert":
+                painter.setBrush(QBrush(QColor("#7f1d1d")))
                 painter.setPen(QPen(QColor("#ef4444"), 2))
             elif self._state == "NOTIFY" and self._notify_style == "rgb-breathing":
                 border_color = QColor.fromHslF(self._rgb_hue / 360.0, 1.0, 0.6)
@@ -969,5 +970,5 @@ class DynamicIsland(QWidget):
 
     def _on_rgb_tick(self):
         """Advance RGB breathing hue and repaint."""
-        self._rgb_hue = (self._rgb_hue + 2.0) % 360.0
+        self._rgb_hue = (self._rgb_hue + 4.0) % 360.0
         self.update()
