@@ -615,6 +615,10 @@ class DynamicIsland(QWidget):
             self._notify.setVisible(False)
             self._chat_area.setVisible(True)
             self._hide_timer.stop()
+            # Cancel all notification special effects when entering chat
+            self._rgb_timer.stop()
+            self._notify_style = ""
+            self._notify.set_style("")
             self._flush_pending()
             self._flush_stream_buffer()
 
