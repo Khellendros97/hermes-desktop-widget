@@ -61,6 +61,9 @@ class SettingsDialog(QDialog):
         self._hide_delay.setSingleStep(500)
         panel_form.addRow("Auto-hide delay:", self._hide_delay)
 
+        self._multiline_check = QCheckBox("Multi-line notification (dynamic height)")
+        panel_form.addRow(self._multiline_check)
+
         panel_group.setLayout(panel_form)
         layout.addWidget(panel_group)
 
@@ -106,6 +109,7 @@ class SettingsDialog(QDialog):
         self._tls_check.setChecked(get("server/tls").lower() in ("true", "1", "yes"))
         self._verify_cert_check.setChecked(get("server/verify_cert").lower() in ("true", "1", "yes"))
         self._hide_delay.setValue(int(get("panel/hide_delay_ms") or 5000))
+        self._multiline_check.setChecked(get("panel/multiline_notify").lower() in ("true", "1", "yes"))
         self._portal_url_input.setText(get("portal/url"))
         self._autostart_check.setChecked(get("app/autostart").lower() in ("true", "1", "yes"))
 
@@ -116,6 +120,7 @@ class SettingsDialog(QDialog):
         set_("server/tls", self._tls_check.isChecked())
         set_("server/verify_cert", self._verify_cert_check.isChecked())
         set_("panel/hide_delay_ms", self._hide_delay.value())
+        set_("panel/multiline_notify", self._multiline_check.isChecked())
         set_("portal/url", self._portal_url_input.text().strip())
         set_("app/autostart", self._autostart_check.isChecked())
 
