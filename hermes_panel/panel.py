@@ -231,16 +231,17 @@ class NotifyStrip(QWidget):
         super().__init__(parent)
         self._raw_text = ""
         self._multiline = False
+        self._style = ""  # "alert" | "rgb-breathing" | ""
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 6, 12, 6)
         layout.setSpacing(8)
 
-        dot = QLabel("●")
-        dot.setStyleSheet("font-size: 10px; color: #22c55e;")
-        dot.setFixedSize(18, 18)
-        dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(dot)
+        self._dot = QLabel("●")
+        self._dot.setStyleSheet("font-size: 10px; color: #22c55e;")
+        self._dot.setFixedSize(18, 18)
+        self._dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._dot)
 
         self._text = QLabel()
         font = QFont()
@@ -282,6 +283,18 @@ class NotifyStrip(QWidget):
         else:
             self._raw_text = _normalize_notification_text(text)
         self._update_text()
+
+    def set_style(self, style: str):
+        """Set notification visual style: 'alert' (red) | 'rgb-breathing' | '' (default)."""
+        self._style = style
+        if style == "alert":
+            self._dot.setStyleSheet("font-size: 10px; color: #ef4444;")
+        elif style == "rgb-breathing":
+            self._dot.setText("✓")
+            self._dot.setStyleSheet("font-size: 10px; color: #22c55e;")
+        else:
+            self._dot.setText("●")
+            self._dot.setStyleSheet("font-size: 10px; color: #22c55e;")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -341,9 +354,11 @@ class DynamicIsland(QWidget):
         self._bubbles: list[MessageBubble] = []
         self._pending_bubbles: list[tuple[str, str]] = []
         self._bg_color = BG_COLOR_HIDDEN
-        self._stream_buffer: list[str] = []   # accumulate deltas before CHAT
+        self._stream_buffer: list[str] = []
         self._stream_active = False
         self._anim: QPropertyAnimation | None = None
+        self._notify_style = ""       # "alert" | "rgb-breathing" | ""
+        self._rgb_hue = 120.0         # RGB breathing hue (start from green)
 
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
@@ -354,6 +369,10 @@ class DynamicIsland(QWidget):
         self._mouse_poll.timeout.connect(self._poll_mouse)
         self._mouse_poll.start()
         self._was_near_strip = False
+
+        self._rgb_timer = QTimer(self)
+        self._rgb_timer.setInterval(30)  # ~33 fps for smooth animation
+        self._rgb_timer.timeout.connect(self._on_rgb_tick)
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -596,6 +615,10 @@ class DynamicIsland(QWidget):
             self._notify.setVisible(False)
             self._chat_area.setVisible(True)
             self._hide_timer.stop()
+            # Cancel all notification special effects when entering chat
+            self._rgb_timer.stop()
+            self._notify_style = ""
+            self._notify.set_style("")
             self._flush_pending()
             self._flush_stream_buffer()
 
@@ -729,8 +752,21 @@ class DynamicIsland(QWidget):
 
     # ── Public API ──
 
-    def show_notification(self, text: str):
+    def show_notification(self, text: str, style: str = ""):
+        # Auto-detect visual style from text content if server didn't provide one
+        if not style:
+            if "⚠️" in text:
+                style = "alert"
+            elif "✅" in text:
+                style = "rgb-breathing"
+        self._notify_style = style
+        self._notify.set_style(style)
         self._notify.set_notification(text)
+        if style == "rgb-breathing":
+            self._rgb_hue = 120.0  # start from green
+            self._rgb_timer.start()
+        elif style != "rgb-breathing" and self._rgb_timer.isActive():
+            self._rgb_timer.stop()
         if self._state == "HIDDEN":
             self._state = "NOTIFY"
             self._apply_state()
@@ -764,6 +800,21 @@ class DynamicIsland(QWidget):
             # Update notification with accumulated text (first 100 chars)
             accumulated = "".join(self._stream_buffer)
             preview = accumulated[:100] + ("..." if len(accumulated) > 100 else "")
+
+            # Auto-detect visual style from accumulated content
+            style = ""
+            if "⚠️" in accumulated:
+                style = "alert"
+                self._rgb_timer.stop()
+            elif "✅" in accumulated:
+                style = "rgb-breathing"
+                self._rgb_hue = 120.0  # start from green
+                self._rgb_timer.start()
+            else:
+                self._rgb_timer.stop()
+            self._notify_style = style
+            self._notify.set_style(style)
+
             self._notify.set_notification(preview)
             if self._state == "NOTIFY":
                 self._apply_state()  # refresh width
@@ -886,7 +937,15 @@ class DynamicIsland(QWidget):
             painter.drawRoundedRect(rect, 4, 4)
         else:
             painter.setBrush(QBrush(BG_COLOR))
-            painter.setPen(QPen(BORDER_COLOR, 1))
+            # Determine border based on notification style
+            if self._state == "NOTIFY" and self._notify_style == "alert":
+                painter.setBrush(QBrush(QColor("#7f1d1d")))
+                painter.setPen(QPen(QColor("#ef4444"), 2))
+            elif self._state == "NOTIFY" and self._notify_style == "rgb-breathing":
+                border_color = QColor.fromHslF(self._rgb_hue / 360.0, 1.0, 0.6)
+                painter.setPen(QPen(border_color, 2))
+            else:
+                painter.setPen(QPen(BORDER_COLOR, 1))
             painter.drawRoundedRect(rect.adjusted(0, 0, -1, -1), self.RADIUS, self.RADIUS)
 
         painter.end()
@@ -912,3 +971,8 @@ class DynamicIsland(QWidget):
         visible = bool(_normalize_portal_url(get("portal/url")))
         self._notify._portal_btn.setVisible(visible)
         self._chat_portal_btn.setVisible(visible)
+
+    def _on_rgb_tick(self):
+        """Advance RGB breathing hue and repaint."""
+        self._rgb_hue = (self._rgb_hue + 4.0) % 360.0
+        self.update()

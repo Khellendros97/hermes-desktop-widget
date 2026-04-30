@@ -45,6 +45,20 @@ def test_deserialize_notification():
     assert isinstance(msg, IncomingNotification)
     assert msg.text == "task done"
     assert msg.level == "info"
+    assert msg.style == ""
+
+
+def test_deserialize_notification_with_style():
+    """Verify style field is parsed correctly for alert and rgb-breathing."""
+    raw_alert = json.dumps({"type": "notification", "text": "⚠️ warning", "level": "warning", "style": "alert"})
+    msg_alert = deserialize(raw_alert)
+    assert isinstance(msg_alert, IncomingNotification)
+    assert msg_alert.style == "alert"
+
+    raw_rgb = json.dumps({"type": "notification", "text": "✅ done", "level": "success", "style": "rgb-breathing"})
+    msg_rgb = deserialize(raw_rgb)
+    assert isinstance(msg_rgb, IncomingNotification)
+    assert msg_rgb.style == "rgb-breathing"
 
 
 def test_deserialize_error():
