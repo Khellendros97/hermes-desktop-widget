@@ -44,6 +44,11 @@ class HermesClient(QObject):
         self._token = ""
         self._verify_cert = True
 
+        # -- Connection state tracking for on-demand reconnect --
+        self._connected = False
+        self._connected_event = threading.Event()
+        self._wake_reconnect = threading.Event()
+
     def connect_to_server(self, host: str, port: int, token: str, tls: bool = True, verify_cert: bool = True):
         self._should_stop = False
         self._url = f"{'wss' if tls else 'ws'}://{host}:{port}/ws"
@@ -54,16 +59,28 @@ class HermesClient(QObject):
 
     def disconnect(self):
         self._should_stop = True
+        self._wake_reconnect.set()  # Wake the reconnect loop so it sees should_stop
         if self._ws:
             self._ws.close()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2)
 
-    def send_message(self, text: str):
-        if self._ws is None:
-            _log.warning("send_message: not connected")
-            self.error_occurred.emit("Not connected to server")
+    def send_message(self, text: str, reconnect_timeout: float = 5.0):
+        """Send a message, automatically reconnecting if the connection is lost.
+
+        If the WebSocket is not currently connected, attempts an on-demand
+        reconnect (with exponential backoff reset) before sending. Returns
+        immediately if reconnect fails within *reconnect_timeout* seconds.
+        """
+        if not self._connected:
+            _log.info("send_message: not connected, attempting on-demand reconnect...")
+            self._reconnect_now(reconnect_timeout)
+
+        if not self._connected:
+            _log.warning("send_message: reconnect failed, giving up")
+            self.error_occurred.emit("Not connected to server (reconnect failed)")
             return
+
         try:
             msg = OutgoingMessage(text=text)
             self._ws.send(msg.to_json())
@@ -75,6 +92,8 @@ class HermesClient(QObject):
     # -- Internal --
 
     def _start(self):
+        self._connected_event.clear()
+        self._wake_reconnect.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -93,13 +112,43 @@ class HermesClient(QObject):
             if self._should_stop:
                 break
 
-            time.sleep(self._reconnect_delay)
-            self._reconnect_delay = min(self._reconnect_delay * 2, 30)
+            # Wait for the reconnect delay, but allow early wake via _wake_reconnect.
+            # When woken (user triggered a reconnect), don't double the delay.
+            woken = self._wake_reconnect.wait(timeout=self._reconnect_delay)
+            self._wake_reconnect.clear()
+            if self._should_stop:
+                break
+            if not woken:
+                # Only backoff on timeout, not on manual wake
+                self._reconnect_delay = min(self._reconnect_delay * 2, 30)
+
+    def _reconnect_now(self, timeout: float):
+        """Force an immediate reconnect from the caller's thread.
+
+        Resets the backoff timer, wakes the reconnect loop, closes any stale
+        connection, and blocks until a new connection is established (or
+        *timeout* seconds elapse).
+        """
+        self._reconnect_delay = 1
+        self._connected_event.clear()
+        self._wake_reconnect.set()  # Wake the background loop's sleep
+
+        # Closing the old ws causes on_close → run_forever returns → loop restarts
+        if self._ws:
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+
+        # Wait for the new connection to come up
+        self._connected_event.wait(timeout=timeout)
 
     def _on_open(self, ws):
         self._reconnect_delay = 1
         auth_msg = OutgoingMessage(type_="auth", token=self._token)
         ws.send(auth_msg.to_json())
+        self._connected = True
+        self._connected_event.set()
         self.connected.emit()
 
     def _on_message(self, ws, raw: str):
@@ -125,4 +174,6 @@ class HermesClient(QObject):
         pass
 
     def _on_close(self, ws, close_status_code, close_msg):
+        self._connected = False
+        self._connected_event.clear()
         self.disconnected.emit()
