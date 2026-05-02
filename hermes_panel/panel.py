@@ -335,9 +335,9 @@ class DynamicIsland(QWidget):
     stream_finished = pyqtSignal(str, str)  # role, text_content
 
     W_HIDDEN, H_HIDDEN = 80, 8
-    W_NOTIFY_MIN = 200
-    W_NOTIFY_MAX = 500
-    W_NOTIFY_MULTILINE = 420
+    W_NOTIFY_MIN = 280
+    W_NOTIFY_MAX = 600
+    W_NOTIFY_MULTILINE = 500
     H_NOTIFY = 48
     NOTIFY_MAX_HEIGHT = 200
     W_CHAT, H_CHAT = 420, 520
@@ -821,25 +821,24 @@ class DynamicIsland(QWidget):
 
     def end_stream(self):
         self._stream_active = False
-        # Emit signal for persistence regardless of done_received
+
+        # Accumulate full response text from stream buffer (NOTIFY path) or bubble (CHAT path)
+        accumulated_text = "".join(self._stream_buffer) if self._state != "CHAT" else ""
         if self._state == "CHAT" and self._current_bubble:
-            content = self._current_bubble.text_content
-            if content:
-                self.stream_finished.emit("assistant", content)
+            accumulated_text = self._current_bubble.text_content
+
         self._current_bubble = None
+
+        # Emit signal for persistence — always, even in NOTIFY state
+        if accumulated_text:
+            self.stream_finished.emit("assistant", accumulated_text)
+
         if self._state != "CHAT":
-            # Still in NOTIFY: keep showing the preview
-            if self._stream_buffer:
-                accumulated = "".join(self._stream_buffer)
-                preview = accumulated[:120] + ("..." if len(accumulated) > 120 else "")
-                self._notify.set_notification(preview)
-            # Still in NOTIFY: keep showing the preview
-            if self._stream_buffer:
-                accumulated = "".join(self._stream_buffer)
-                preview = accumulated[:120] + ("..." if len(accumulated) > 120 else "")
-                self._notify.set_notification(preview)
-                if self._state == "NOTIFY":
-                    self._apply_state()
+            # Still in NOTIFY: show preview of accumulated text
+            preview = accumulated_text[:120] + ("..." if len(accumulated_text) > 120 else "")
+            self._notify.set_notification(preview)
+            if self._state == "NOTIFY":
+                self._apply_state()
 
     def add_user_bubble(self, text: str):
         if self._state != "CHAT":
